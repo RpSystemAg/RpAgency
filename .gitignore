@@ -1,0 +1,6 @@
+# Questo repository versiona esclusivamente lo ZIP di release della suite.
+# L'albero estratto (PR-STUDIO-Unified-Suite-1.0.0/) resta solo in locale.
+/*
+!/.gitignore
+!/README.md
+!/*.zip
