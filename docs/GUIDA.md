@@ -1,30 +1,9 @@
-# RpAgency — PR STUDIO Unified Suite 1.0.0
-
-Repository di distribuzione della **RP STUDIO Unified Suite**: un piano di controllo WordPress, un esecutore browser Chrome e un plugin ChatGPT che li comanda entrambi.
-
-| File | Descrizione |
-| --- | --- |
-| [`RP-STUDIO-Unified-Suite-1.0.0-10000-Workflows-LATEST-ALIGNED-2026-08-25.zip`](RP-STUDIO-Unified-Suite-1.0.0-10000-Workflows-LATEST-ALIGNED-2026-08-25.zip) | Pacchetto completo della suite 1.0.0, allineato al 25/08/2026, con 10.000 workflow enterprise. |
-
-Lo ZIP contiene l'intero albero `PR-STUDIO-Unified-Suite-1.0.0/`:
-
-- `prstudio-unified-control/` — plugin WordPress di controllo (PHP)
-- `prstudio-unified-browser-agent/` — estensione browser agent
-- `.github/` — workflow CI, script di certificazione e build
-- `docs/`, `evidence/`, `quality/`, `tests/`, `bench/` — documentazione, evidenze e verifiche
-
-```bash
-unzip RP-STUDIO-Unified-Suite-1.0.0-10000-Workflows-LATEST-ALIGNED-2026-08-25.zip
-```
-
----
-
-# Guida — installazione, collegamento e uso
+# Guida RpAgency — installazione, collegamento e uso
 
 Guida operativa alla **PR STUDIO Unified Suite 1.0.0** distribuita da questo repository.
 Tre pezzi, un solo cavo logico: **WordPress** tiene lo stato, **ChatGPT** dà gli ordini, **Chrome** esegue quello che si vede a schermo.
 
-> **Versione grafica** con riproduzioni passo passo delle schermate: [`docs/index.html`](docs/index.html) — aprila in locale dopo il clone.
+> Versione grafica completa con riproduzioni delle schermate: [`docs/index.html`](index.html).
 
 | | |
 |---|---|
@@ -777,4 +756,4 @@ Il pacchetto è insolitamente esplicito sui propri confini. Vale la pena leggerl
 
 ### Nota sulle immagini della versione HTML
 
-Le schermate in [`docs/index.html`](docs/index.html) sono **riproduzioni ricostruite dal codice sorgente** del pacchetto — dal markup reale della pagina di amministrazione WordPress, dal `sidepanel.html` dell'estensione e dal `manifest.json` — e, per la parte ChatGPT, da un'osservazione diretta dell'interfaccia in italiano. Non sono fotografie di un'installazione dal vivo. Testi dei pulsanti, etichette dei campi, percorsi e URL corrispondono a quelli che vedrai; spaziature e sfumature possono differire, e ChatGPT e Chrome cambiano UI nel tempo.
+Le schermate in [`docs/index.html`](index.html) sono **riproduzioni ricostruite dal codice sorgente** del pacchetto — dal markup reale della pagina di amministrazione WordPress, dal `sidepanel.html` dell'estensione e dal `manifest.json` — e, per la parte ChatGPT, da un'osservazione diretta dell'interfaccia in italiano. Non sono fotografie di un'installazione dal vivo. Testi dei pulsanti, etichette dei campi, percorsi e URL corrispondono a quelli che vedrai; spaziature e sfumature possono differire, e ChatGPT e Chrome cambiano UI nel tempo.
