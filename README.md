@@ -15,6 +15,13 @@ Lo ZIP contiene l'intero albero `PR-STUDIO-Unified-Suite-1.0.0/`:
 - `.github/` — workflow CI, script di certificazione e build
 - `docs/`, `evidence/`, `quality/`, `tests/`, `bench/` — documentazione, evidenze e verifiche
 
+## Documentazione
+
+| Documento | Cosa contiene |
+| --- | --- |
+| [`docs/GUIDA.md`](docs/GUIDA.md) | Guida completa: prerequisiti, installazione plugin WordPress, collegamento del plugin ChatGPT, modalita sviluppatore Chrome, pairing dei tre componenti, riferimento delle capacita, 50 prompt ottimizzati, troubleshooting e limiti dichiarati. |
+| [`docs/index.html`](docs/index.html) | Stessa guida in versione grafica, con riproduzioni passo passo delle schermate. Aprila in locale dopo il clone, oppure abilita GitHub Pages sulla cartella `/docs`. |
+
 ## Uso
 
 Scaricare lo ZIP dalla pagina del repository ed estrarlo:
