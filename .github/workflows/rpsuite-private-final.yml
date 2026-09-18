@@ -38,7 +38,7 @@ jobs:
           $nhex = (($p.Modulus | ForEach-Object { $_.ToString("x2") }) -join "")
           [int64]$e = 0
           foreach ($b in $p.Exponent) { $e = ($e -shl 8) -bor $b }
-          @{ n_hex=$nhex; e=$e; schema="rpsuite.ephemeral_rsa.v1" } |
+          @{ n_hex=$nhex; e=$e; schema="rpsuite.ephemeral_rsa.v1"; run_id=$env:GITHUB_RUN_ID } |
             ConvertTo-Json -Compress | Set-Content -Encoding utf8 ci/public.json
           gh issue comment 2 --body-file ci/public.json
 
@@ -109,7 +109,18 @@ jobs:
           foreach ($f in $m.files.PSObject.Properties) {
             $name = $f.Name
             $nonce = $f.Value.nonce_hex
-            python ci/chacha.py decrypt "ci/$name.enc" "incoming/$name" ci/transport.key $nonce
+            $enc = "ci/$name.enc"
+            if ($f.Value.parts) {
+              [IO.File]::WriteAllBytes($enc, [byte[]]@())
+              $out = [IO.File]::Open($enc, [IO.FileMode]::Append)
+              try {
+                foreach ($part in $f.Value.parts) {
+                  $bytes = [IO.File]::ReadAllBytes(("ci/input/" + $part))
+                  $out.Write($bytes, 0, $bytes.Length)
+                }
+              } finally { $out.Dispose() }
+            }
+            python ci/chacha.py decrypt $enc "incoming/$name" ci/transport.key $nonce
           }
 
       - name: Extract and inspect source
