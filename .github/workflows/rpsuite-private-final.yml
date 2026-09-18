@@ -8,6 +8,7 @@ on:
 permissions:
   contents: write
   actions: write
+  issues: write
 
 jobs:
   final-build:
@@ -37,11 +38,7 @@ jobs:
           foreach ($b in $p.Exponent) { $e = ($e -shl 8) -bor $b }
           @{ n_hex=$nhex; e=$e; schema="rpsuite.ephemeral_rsa.v1" } |
             ConvertTo-Json -Compress | Set-Content -Encoding utf8 ci/public.json
-          git config user.name "RpSuite CI"
-          git config user.email "rpsuite-ci@users.noreply.github.com"
-          git add ci/public.json
-          git commit -m "[ci-key] publish ephemeral transport key"
-          git push origin HEAD:rpsuite-final-20260918-ci
+          gh issue comment 2 --body-file ci/public.json
 
       - name: Wait for encrypted inputs
         shell: pwsh
@@ -157,10 +154,20 @@ jobs:
           python ci/inspect.py
           $m = Get-Content ci/input-manifest.json -Raw | ConvertFrom-Json
           python ci/chacha.py encrypt ci/inspect.txt ci/inspect.enc ci/transport.key $m.report_nonce_hex
-          "ready" | Set-Content ci/inspect.ready
-          git add ci/inspect.enc ci/inspect.ready
-          git commit -m "[ci-inspect] encrypted component inspection"
-          git push origin HEAD:rpsuite-final-20260918-ci
+
+      - name: Upload encrypted inspection
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpsuite-encrypted-inspection
+          path: ci/inspect.enc
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+      - name: Signal inspection ready
+        shell: pwsh
+        run: |
+          gh issue comment 2 --body "INSPECTION_READY run=$env:GITHUB_RUN_ID"
 
       - name: Wait for encrypted patch
         shell: pwsh
@@ -191,12 +198,12 @@ jobs:
           retention-days: 7
           compression-level: 9
 
-      - name: Publish final verification metadata
+      - name: Upload final verification metadata
         if: success()
-        shell: pwsh
-        run: |
-          if (Test-Path ci/final-status.json) {
-            git add ci/final-status.json
-            git commit -m "[ci-final] verified build metadata"
-            git push origin HEAD:rpsuite-final-20260918-ci
-          }
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpsuite-final-verification
+          path: ci/final-status.json
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
