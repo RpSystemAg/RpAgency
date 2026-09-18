@@ -1,0 +1,202 @@
+name: RpSuite 2.0.0 private final build
+
+on:
+  push:
+    paths:
+      - ".github/workflows/rpsuite-private-final.yml"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  final-build:
+    if: github.ref_name == 'rpsuite-final-20260918-ci'
+    runs-on: windows-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: rpsuite-final-20260918-ci
+          fetch-depth: 0
+          persist-credentials: true
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Generate ephemeral RSA transport key
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force ci | Out-Null
+          $rsa = [System.Security.Cryptography.RSA]::Create(4096)
+          [IO.File]::WriteAllBytes("ci/private.der", $rsa.ExportPkcs8PrivateKey())
+          $p = $rsa.ExportParameters($false)
+          $nhex = (($p.Modulus | ForEach-Object { $_.ToString("x2") }) -join "")
+          [int64]$e = 0
+          foreach ($b in $p.Exponent) { $e = ($e -shl 8) -bor $b }
+          @{ n_hex=$nhex; e=$e; schema="rpsuite.ephemeral_rsa.v1" } |
+            ConvertTo-Json -Compress | Set-Content -Encoding utf8 ci/public.json
+          git config user.name "RpSuite CI"
+          git config user.email "rpsuite-ci@users.noreply.github.com"
+          git add ci/public.json
+          git commit -m "[ci-key] publish ephemeral transport key"
+          git push origin HEAD:rpsuite-final-20260918-ci
+
+      - name: Wait for encrypted inputs
+        shell: pwsh
+        run: |
+          $ok = $false
+          for ($i=0; $i -lt 240; $i++) {
+            git fetch origin rpsuite-final-20260918-ci
+            git show "origin/rpsuite-final-20260918-ci:ci/input.ready" *> $null
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $ok) { throw "Timed out waiting for encrypted inputs" }
+          git pull --ff-only origin rpsuite-final-20260918-ci
+
+      - name: Decrypt transport key
+        shell: pwsh
+        run: |
+          $m = Get-Content ci/input-manifest.json -Raw | ConvertFrom-Json
+          $rsa = [System.Security.Cryptography.RSA]::Create()
+          $priv = [IO.File]::ReadAllBytes("ci/private.der")
+          $read = 0
+          $rsa.ImportPkcs8PrivateKey($priv, [ref]$read)
+          $wrapped = [Convert]::FromBase64String($m.wrapped_key_b64)
+          $key = $rsa.Decrypt($wrapped, [System.Security.Cryptography.RSAEncryptionPadding]::Pkcs1)
+          [IO.File]::WriteAllBytes("ci/transport.key", $key)
+
+      - name: Install ChaCha20 transport helper
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import struct, sys
+
+          def rotl(v,n): return ((v << n) & 0xffffffff) | (v >> (32-n))
+          def qr(x,a,b,c,d):
+              x[a]=(x[a]+x[b])&0xffffffff; x[d]^=x[a]; x[d]=rotl(x[d],16)
+              x[c]=(x[c]+x[d])&0xffffffff; x[b]^=x[c]; x[b]=rotl(x[b],12)
+              x[a]=(x[a]+x[b])&0xffffffff; x[d]^=x[a]; x[d]=rotl(x[d],8)
+              x[c]=(x[c]+x[d])&0xffffffff; x[b]^=x[c]; x[b]=rotl(x[b],7)
+          def block(key,counter,nonce):
+              const=b"expand 32-byte k"
+              st=list(struct.unpack("<4I",const)+struct.unpack("<8I",key)+(counter,)+struct.unpack("<3I",nonce))
+              x=st[:]
+              for _ in range(10):
+                  qr(x,0,4,8,12); qr(x,1,5,9,13); qr(x,2,6,10,14); qr(x,3,7,11,15)
+                  qr(x,0,5,10,15); qr(x,1,6,11,12); qr(x,2,7,8,13); qr(x,3,4,9,14)
+              return struct.pack("<16I", *[((x[i]+st[i])&0xffffffff) for i in range(16)])
+          def crypt(data,key,nonce,counter=1):
+              out=bytearray(len(data)); pos=0; ctr=counter
+              while pos<len(data):
+                  ks=block(key,ctr,nonce); n=min(64,len(data)-pos)
+                  for i in range(n): out[pos+i]=data[pos+i]^ks[i]
+                  pos+=n; ctr=(ctr+1)&0xffffffff
+              return bytes(out)
+          if __name__=="__main__":
+              mode, src, dst, keyp, noncehex = sys.argv[1:6]
+              key=Path(keyp).read_bytes(); nonce=bytes.fromhex(noncehex)
+              Path(dst).write_bytes(crypt(Path(src).read_bytes(),key,nonce))
+          '@ | Set-Content -Encoding utf8 ci/chacha.py
+
+      - name: Decrypt input components
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force incoming | Out-Null
+          $m = Get-Content ci/input-manifest.json -Raw | ConvertFrom-Json
+          foreach ($f in $m.files.PSObject.Properties) {
+            $name = $f.Name
+            $nonce = $f.Value.nonce_hex
+            python ci/chacha.py decrypt "ci/$name.enc" "incoming/$name" ci/transport.key $nonce
+          }
+
+      - name: Extract and inspect source
+        shell: pwsh
+        run: |
+          @'
+          from pathlib import Path
+          import zipfile, json, re, shutil
+          root=Path(".")
+          work=root/"work"; shutil.rmtree(work,ignore_errors=True); work.mkdir()
+          comps={
+            "wordpress.zip":"wordpress",
+            "browser.zip":"browser",
+            "local-core.zip":"local-core",
+          }
+          report=[]
+          for zname,dname in comps.items():
+              zpath=root/"incoming"/zname
+              dest=work/dname; dest.mkdir()
+              with zipfile.ZipFile(zpath) as z:
+                  names=z.namelist()
+                  report.append(f"\n===== {zname} : {len(names)} entries =====\n")
+                  report.extend(n+"\n" for n in names)
+                  z.extractall(dest)
+          patterns=[
+            "class-prstudio-uc-turn.php","class-prstudio-uc-command-compiler.php",
+            "readme.txt","manifest.json","sidepanel.js","service-worker.js",
+            "background.js","run_local_core.py","prstudio_local_core.py",
+            ".spec","build","windows","permissions","checkout"
+          ]
+          report.append("\n===== SELECTED FILE CONTENTS =====\n")
+          for base in work.iterdir():
+              for p in sorted(base.rglob("*")):
+                  if not p.is_file(): continue
+                  low=p.name.lower()
+                  rel=p.relative_to(root)
+                  if any((pat.startswith(".") and low.endswith(pat)) or pat in low for pat in patterns):
+                      if p.stat().st_size > 400000: continue
+                      try: txt=p.read_text(encoding="utf-8",errors="replace")
+                      except Exception: continue
+                      report.append(f"\n----- FILE {rel} ({p.stat().st_size} bytes) -----\n{txt}\n")
+          Path("ci/inspect.txt").write_text("".join(report),encoding="utf-8")
+          '@ | Set-Content -Encoding utf8 ci/inspect.py
+          python ci/inspect.py
+          $m = Get-Content ci/input-manifest.json -Raw | ConvertFrom-Json
+          python ci/chacha.py encrypt ci/inspect.txt ci/inspect.enc ci/transport.key $m.report_nonce_hex
+          "ready" | Set-Content ci/inspect.ready
+          git add ci/inspect.enc ci/inspect.ready
+          git commit -m "[ci-inspect] encrypted component inspection"
+          git push origin HEAD:rpsuite-final-20260918-ci
+
+      - name: Wait for encrypted patch
+        shell: pwsh
+        run: |
+          $ok = $false
+          for ($i=0; $i -lt 240; $i++) {
+            git fetch origin rpsuite-final-20260918-ci
+            git show "origin/rpsuite-final-20260918-ci:ci/patch.ready" *> $null
+            if ($LASTEXITCODE -eq 0) { $ok = $true; break }
+            Start-Sleep -Seconds 5
+          }
+          if (-not $ok) { throw "Timed out waiting for patch payload" }
+          git pull --ff-only origin rpsuite-final-20260918-ci
+          $m = Get-Content ci/input-manifest.json -Raw | ConvertFrom-Json
+          python ci/chacha.py decrypt ci/patch.py.enc ci/patch.py ci/transport.key $m.patch_nonce_hex
+
+      - name: Apply fixes, build, test, package
+        shell: pwsh
+        run: |
+          python ci/patch.py
+
+      - name: Upload final suite
+        uses: actions/upload-artifact@v4
+        with:
+          name: RpSuite-2.0.0-ENTERPRISE-FINAL-2026-09-18
+          path: output/RpSuite-2.0.0
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 9
+
+      - name: Publish final verification metadata
+        if: success()
+        shell: pwsh
+        run: |
+          if (Test-Path ci/final-status.json) {
+            git add ci/final-status.json
+            git commit -m "[ci-final] verified build metadata"
+            git push origin HEAD:rpsuite-final-20260918-ci
+          }
