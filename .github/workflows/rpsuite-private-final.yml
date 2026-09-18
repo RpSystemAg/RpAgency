@@ -15,6 +15,8 @@ jobs:
     if: github.ref_name == 'rpsuite-final-20260918-ci'
     runs-on: windows-latest
     timeout-minutes: 55
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
         with:
